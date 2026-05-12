@@ -127,6 +127,7 @@
             btnModeAuto = new Button();
             btnModeManual = new Button();
             btnStatus = new Button();
+            btnHelp = new Button();
             grpCommandStatus = new GroupBox();
             lblLastCommand = new Label();
             lblCommandResult = new Label();
@@ -1103,6 +1104,7 @@
             // grpMode
             // 
             grpMode.Controls.Add(btnStatus);
+            grpMode.Controls.Add(btnHelp);
             grpMode.Controls.Add(btnModeManual);
             grpMode.Controls.Add(btnModeAuto);
             grpMode.Font = new Font("Segoe UI", 12F);
@@ -1139,6 +1141,15 @@
             btnStatus.TabIndex = 2;
             btnStatus.Text = "Lấy trạng thái";
             btnStatus.UseVisualStyleBackColor = true;
+            // 
+            // btnHelp
+            // 
+            btnHelp.Location = new Point(433, 90);
+            btnHelp.Name = "btnHelp";
+            btnHelp.Size = new Size(137, 35);
+            btnHelp.TabIndex = 3;
+            btnHelp.Text = "Help";
+            btnHelp.UseVisualStyleBackColor = true;
             // 
             // grpCommandStatus
             // 
@@ -2087,6 +2098,7 @@
         private Label lblLastCommand;
         private GroupBox grpMode;
         private Button btnStatus;
+        private Button btnHelp;
         private Button btnModeManual;
         private Button btnModeAuto;
         private GroupBox grpDeviceControl;

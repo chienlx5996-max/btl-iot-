@@ -81,13 +81,17 @@ namespace Smarthome
                     return;
                 }
 
-                // Kiem tra mat khau voi bcrypt hash
-                bool passwordOk = BCrypt.Net.BCrypt.Verify(password, storedHash);
+                // B1: So sanh truc tiep plaintext (VD: nguoi dung nhap "1234", DB luu "1234")
+                bool passwordOk = (password == storedHash);
 
-                if (!passwordOk)
+                // B2: Neu khong khop, thu kiem tra bcrypt (truong hop DB luu hash)
+                if (!passwordOk && storedHash.StartsWith("$2"))
                 {
-                    // Fallback: so sanh truc tiep (truong hop mat khau chua hash)
-                    passwordOk = (password == storedHash);
+                    try
+                    {
+                        passwordOk = BCrypt.Net.BCrypt.Verify(password, storedHash);
+                    }
+                    catch { passwordOk = false; }
                 }
 
                 if (!passwordOk)

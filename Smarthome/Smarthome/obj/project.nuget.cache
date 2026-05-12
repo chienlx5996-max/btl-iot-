@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "en67lAirBVk=",
+  "dgSpecHash": "tPIVFMsC8ME=",
   "success": true,
-  "projectFilePath": "D:\\UTH\\BaiHoc\\IOT\\BTL\\Smarthome\\Smarthome\\Smarthome.csproj",
+  "projectFilePath": "D:\\UTH\\BaiHoc\\IOT\\BTL\\btl-iot-\\Smarthome\\Smarthome\\Smarthome.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Admin\\.nuget\\packages\\bcrypt.net-next\\4.0.3\\bcrypt.net-next.4.0.3.nupkg.sha512",
     "C:\\Users\\Admin\\.nuget\\packages\\bouncycastle.cryptography\\2.2.1\\bouncycastle.cryptography.2.2.1.nupkg.sha512",

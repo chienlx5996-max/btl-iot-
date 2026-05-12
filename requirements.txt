@@ -1,0 +1,27 @@
+# =====================================================
+# REQUIREMENTS - HỆ THỐNG NHÀ THÔNG MINH
+# =====================================================
+
+# Cài đặt: pip install -r requirements.txt
+
+# Database
+mysql-connector-python==8.2.0
+
+# Serial Communication
+pyserial==3.5
+
+# Web Framework
+Flask==3.0.0
+Werkzeug==3.0.0
+
+# Utilities
+python-dotenv==1.0.0
+
+# (Tuỳ chọn) MQTT Support
+# paho-mqtt==1.6.1
+
+# (Tuỳ chọn) Async Support
+# asyncio
+
+# (Tuỳ chọn) Testing
+# pytest==7.4.0

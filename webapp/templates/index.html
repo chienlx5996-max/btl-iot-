@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Home Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <nav class="navbar glass">
+        <div class="logo">
+            <h2 style="color: var(--text);">
+                <i class="fas fa-house-chimney-window"></i> SMART HOME
+            </h2>
+        </div>
+        <div class="user-info">
+            <span>Welcome, <strong>{{ user.username }}</strong> ({{ user.role }})</span>
+            <a href="/history" style="margin-left: 16px; color: var(--text); text-decoration: none;"><i class="fas fa-clock-rotate-left"></i></a>
+            {% if user.role == 'admin' %}
+                <a href="/admin" style="margin-left: 16px; color: var(--text); text-decoration: none;"><i class="fas fa-shield-halved"></i></a>
+            {% endif %}
+            <a href="/logout" style="margin-left: 20px; color: var(--danger); text-decoration: none;"><i class="fas fa-sign-out-alt"></i></a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Sensor Grid -->
+        <div class="grid">
+            <div class="sensor-card glass">
+                <div class="sensor-icon"><i class="fas fa-thermometer-half"></i></div>
+                <div class="sensor-label">Nhiệt độ</div>
+                <div class="sensor-value" id="temp-val">--°C</div>
+                <div class="status-badge badge-safe" id="temp-status">Normal</div>
+            </div>
+            <div class="sensor-card glass">
+                <div class="sensor-icon"><i class="fas fa-wind"></i></div>
+                <div class="sensor-label">Khí Gas (MQ-3)</div>
+                <div class="sensor-value" id="gas-val">---</div>
+                <div class="status-badge badge-safe" id="gas-status">Safe</div>
+            </div>
+            <div class="sensor-card glass">
+                <div class="sensor-icon"><i class="fas fa-cloud-showers-heavy"></i></div>
+                <div class="sensor-label">Trạng thái Mưa</div>
+                <div class="sensor-value" id="rain-val">Không</div>
+            </div>
+            <div class="sensor-card glass">
+                <div class="sensor-icon"><i class="fas fa-person-rays"></i></div>
+                <div class="sensor-label">Chuyển động</div>
+                <div class="sensor-value" id="pir-val">--</div>
+            </div>
+        </div>
+
+        <div class="grid" style="margin-top: 30px; grid-template-columns: 1fr 2fr;">
+            <!-- Device Controls -->
+            <div class="device-card glass">
+                <h3><i class="fas fa-sliders"></i> Điều khiển</h3>
+                <div class="device-item">
+                    <span><i class="fas fa-fan"></i> Quạt</span>
+                    <label class="switch">
+                        <input type="checkbox" id="fan-switch" onchange="control('FAN')">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="device-item">
+                    <span><i class="fas fa-door-open"></i> Cửa chính</span>
+                    <label class="switch">
+                        <input type="checkbox" id="door-switch" onchange="control('DOOR')">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="device-item">
+                    <span><i class="fas fa-window-maximize"></i> Cửa sổ</span>
+                    <label class="switch">
+                        <input type="checkbox" id="window-switch" onchange="control('WINDOW')">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="device-item">
+                    <span><i class="fas fa-bell"></i> Còi báo</span>
+                    <label class="switch">
+                        <input type="checkbox" id="buzzer-switch" onchange="control('BUZZER')">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="device-item" style="margin-top: 20px; border: none;">
+                    <span><i class="fas fa-robot"></i> Chế độ Tự động</span>
+                    <label class="switch">
+                        <input type="checkbox" id="auto-switch" onchange="control('MODE')">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- System Alerts & Messages -->
+            <div class="device-card glass">
+                <h3><i class="fas fa-circle-exclamation"></i> Thông báo hệ thống</h3>
+                <div id="system-message" style="margin-top: 20px; font-size: 1.2rem; padding: 20px; border-radius: 15px; background: rgba(255,255,255,0.05);">
+                    Đang tải dữ liệu...
+                </div>
+                <div style="margin-top: 20px;">
+                    <span class="status-badge" id="system-level">SAFE</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Section -->
+        <div class="logs-section">
+            <div class="glass table-container">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 15px 15px;">
+                    <h3><i class="fas fa-list-ul"></i> Lịch sử cảm biến</h3>
+                    <button class="btn btn-primary" onclick="loadLogs()"><i class="fas fa-sync"></i> Làm mới</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Thời gian</th>
+                            <th>Gas</th>
+                            <th>Nhiệt độ</th>
+                            <th>PIR</th>
+                            <th>Mưa</th>
+                            <th>Mức độ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sensor-logs-body">
+                        <!-- Data will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

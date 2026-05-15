@@ -1,0 +1,401 @@
+:root {
+  /* palette (no gradients; brutalist pop) */
+  --primary: #4cc9f0;    /* xanh nước cho nhấn */
+  --secondary: #2cff80;  /* xanh thành công */
+  --bg: #eaf8ff;         /* nền xanh nước sáng */
+  --card-bg: #f6fbff;    /* nền card sáng */
+  --text: #081a2b;       /* chữ đậm */
+  --text-muted: #46657a; /* chữ phụ */
+
+  --danger: #ff4d5a;
+  --success: #20d36b;
+  --warning: #ffd166;
+
+  /* brutalist sizing */
+  --border: 3px;
+  --radius: 18px;
+  --shadow: 7px 7px 0 #000;
+
+  /* global spacing */
+  --gap: 18px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Outfit', sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  padding-bottom: 30px;
+}
+
+/* subtle noise-ish via repeating lines (very cheap, vẫn flat) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.018),
+      rgba(255, 255, 255, 0.018) 1px,
+      rgba(0, 0, 0, 0) 2px,
+      rgba(0, 0, 0, 0) 6px
+    );
+  opacity: 0.55;
+}
+
+/* “Card” brutalist */
+.glass {
+  background: var(--card-bg);
+  border: var(--border) solid #000;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(6px);
+}
+
+/* Navbar */
+.navbar {
+  padding: 18px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 auto 18px auto;
+  max-width: 1400px;
+  gap: 14px;
+  position: sticky;
+  top: 12px;
+  z-index: 5;
+}
+
+.logo h2 {
+  font-size: 1.35rem;
+  letter-spacing: 0.6px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-weight: 900;
+}
+
+/* dùng để thay inline gradient/inline style */
+.brand-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: var(--border) solid #000;
+  background: #fff;
+  color: #000;
+  box-shadow: 4px 4px 0 #000;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-weight: 600;
+}
+
+/* Layout */
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 16px;
+  position: relative;
+  z-index: 1; /* trên noise layer */
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--gap);
+  align-items: start;
+}
+
+/* Cards */
+.sensor-card {
+  padding: 18px;
+  position: relative;
+  overflow: hidden;
+}
+.sensor-card::after {
+  content: "";
+  position: absolute;
+  inset: -30px;
+  background:
+    radial-gradient(circle at 15% 15%, rgba(255, 209, 102, 0.18), rgba(0,0,0,0) 55%),
+    radial-gradient(circle at 85% 20%, rgba(44, 255, 128, 0.12), rgba(0,0,0,0) 55%),
+    radial-gradient(circle at 50% 100%, rgba(255, 77, 90, 0.10), rgba(0,0,0,0) 55%);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.sensor-card:hover {
+  transform: translateY(-2px);
+  transition: transform 0.15s ease;
+}
+
+.sensor-icon {
+  font-size: 1.95rem;
+  margin-bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border: var(--border) solid #000;
+  background: #fff;
+  color: #000;
+  border-radius: 16px;
+  box-shadow: 3px 3px 0 #000;
+  position: relative;
+  z-index: 1;
+}
+
+.sensor-value {
+  font-size: 2.35rem;
+  font-weight: 900;
+  line-height: 1.05;
+  position: relative;
+  z-index: 1;
+}
+
+.sensor-label {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-size: 0.82rem;
+  margin-top: 6px;
+  margin-bottom: 10px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Device controls */
+.device-card {
+  padding: 18px;
+}
+
+.device-card h3 {
+  font-size: 1.05rem;
+  margin-bottom: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.device-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 2px dashed rgba(255, 255, 255, 0.14);
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.device-item:last-child {
+  border-bottom: none;
+}
+
+/* Switch */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 66px;
+  height: 34px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #1a1a1a;
+  border: 3px solid #000;
+  transition: 0.15s;
+  border-radius: 999px;
+  box-shadow: 3px 3px 0 #000;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 24px;
+  width: 24px;
+  left: 5px;
+  bottom: 3px;
+  background-color: #fff;
+  border: 3px solid #000;
+  transition: 0.15s;
+  border-radius: 50%;
+  box-shadow: 2px 2px 0 #000;
+}
+
+input:checked + .slider {
+  background: #fff;
+}
+
+input:checked + .slider:before {
+  transform: translateX(30px);
+}
+
+/* Tables */
+.logs-section {
+  margin-top: 26px;
+}
+
+.table-container {
+  overflow-x: auto;
+  padding: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  text-align: left;
+  padding: 12px 10px;
+  color: var(--text-muted);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.9rem;
+}
+
+td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  vertical-align: top;
+  font-size: 0.95rem;
+}
+
+/* Buttons */
+.btn {
+  padding: 12px 18px;
+  border-radius: 14px;
+  border: var(--border) solid #000;
+  cursor: pointer;
+  font-weight: 900;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.08s ease;
+  box-shadow: 4px 4px 0 #000;
+  background: #fff;
+  color: #000;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  user-select: none;
+}
+
+.btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 #000;
+}
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #000;
+}
+.btn-primary:active {
+  background: #fff;
+}
+
+/* Status badges */
+.status-badge {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: var(--border) solid #000;
+  display: inline-block;
+  font-size: 0.85rem;
+  font-weight: 950;
+  box-shadow: 3px 3px 0 #000;
+  line-height: 1;
+}
+
+.badge-safe {
+  background: var(--success);
+  color: #000;
+}
+
+.badge-warning {
+  background: var(--warning);
+  color: #000;
+}
+
+.badge-danger {
+  background: var(--danger);
+  color: #000;
+}
+
+/* Login */
+.login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 18px;
+  position: relative;
+  z-index: 1;
+}
+
+.login-card {
+  width: 460px;
+  padding: 30px;
+  text-align: center;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+}
+
+/* Small selects/inputs */
+input.glass,
+select.glass {
+  border-radius: 12px;
+  border: var(--border) solid #000;
+  background: rgba(255, 255, 255, 0.06);
+  /* Force readable text on light brutalist backgrounds */
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text) !important;
+  padding: 12px;
+  box-shadow: 4px 4px 0 #000;
+  outline: none;
+}
+input.glass::placeholder,
+select.glass::placeholder {
+  color: rgba(0, 0, 0, 0.5);
+}
+input.glass:focus,
+select.glass:focus {
+  box-shadow: 5px 5px 0 #000;
+}
+
+/* Keep inline SVG/icon text readable on small screens */
+@media (max-width: 600px) {
+  .navbar {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+}

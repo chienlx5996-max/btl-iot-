@@ -2,7 +2,7 @@
 =============================================================
   DO AN IOT NHA THONG MINH - DATABASE SETUP (TOI UU HOA)
   MySQL + Python (mysql-connector-python)
-  
+
   Thay doi so voi phien ban cu:
     - accounts     : Bo truong `email` (khong dung trong UI)
     - control_commands : Bo enum 'API' khoi source
@@ -11,7 +11,7 @@
 
   Cai dat thu vien:
       pip install mysql-connector-python bcrypt
-      
+
   Chay lan dau de tao CSDL va cac bang:
       python db_setup.py
 =============================================================
@@ -21,16 +21,17 @@ import mysql.connector
 from mysql.connector import Error
 import bcrypt
 import sys
+from datetime import datetime, timedelta, timezone
 
 # ============================================================
 # CAU HINH KET NOI
 # ============================================================
 DB_CONFIG = {
-    "host":     "localhost",
-    "port":     3306,
-    "user":     "root",
+    "host": "localhost",
+    "port": 3306,
+    "user": "root",
     "password": "123456789@",
-    "charset":  "utf8mb4",
+    "charset": "utf8mb4",
 }
 
 DB_NAME = "nha_thong_minh"
@@ -193,28 +194,65 @@ CREATE TABLE IF NOT EXISTS `threshold_config` (
 ) ENGINE=InnoDB COMMENT='Cau hinh nguong canh bao va tham so he thong';
 """
 
+
 # ============================================================
 # DU LIEU MAC DINH
 # ============================================================
 
 DEFAULT_ACCOUNTS = [
     # (username, plaintext_password, role, full_name)
-    ("admin",  "1234", "admin", "Quan Tri Vien"),
-    ("user1",  "2580", "user",  "Nguoi Dung 1"),
-    ("viewer", "0000", "viewer","Nguoi Xem"),
+    ("admin", "1234", "admin", "Quan Tri Vien"),
+    ("user1", "2580", "user", "Nguoi Dung 1"),
+    ("viewer", "0000", "viewer", "Nguoi Xem"),
 ]
 
 DEFAULT_THRESHOLDS = [
-    ("GAS_WARNING",    "300",  "INT",   "Nguong canh bao khi MQ-3 (ADC)"),
-    ("GAS_DANGER",     "600",  "INT",   "Nguong nguy hiem khi MQ-3 (ADC)"),
-    ("GAS_COMBO",      "400",  "INT",   "Nguong khi + co nguoi thi nguy hiem (ADC)"),
-    ("TEMP_WARNING",   "35.0", "FLOAT", "Nguong canh bao nhiet do (do C)"),
-    ("TEMP_DANGER",    "40.0", "FLOAT", "Nguong nguy hiem nhiet do (do C)"),
-    ("SEND_INTERVAL",  "1000", "INT",   "Chu ky gui du lieu len PC (ms)"),
-    ("DOOR_OPEN_TIME", "2000", "INT",   "Thoi gian mo cua (ms)"),
-    ("DOOR_HOLD_TIME", "5000", "INT",   "Thoi gian giu cua mo (ms)"),
-    ("MAX_WRONG_PWD",  "3",    "INT",   "So lan sai mat khau toi da"),
-    ("AUTO_MODE",      "1",    "BOOL",  "Che do tu dong mac dinh (1=bat, 0=tat)"),
+    ("GAS_WARNING", "300", "INT", "Nguong canh bao khi MQ-3 (ADC)"),
+    ("GAS_DANGER", "600", "INT", "Nguong nguy hiem khi MQ-3 (ADC)"),
+    ("GAS_COMBO", "400", "INT", "Nguong khi + co nguoi thi nguy hiem (ADC)"),
+    ("TEMP_WARNING", "35.0", "FLOAT", "Nguong canh bao nhiet do (do C)"),
+    ("TEMP_DANGER", "40.0", "FLOAT", "Nguong nguy hiem nhiet do (do C)"),
+    ("SEND_INTERVAL", "1000", "INT", "Chu ky gui du lieu len PC (ms)"),
+    ("DOOR_OPEN_TIME", "2000", "INT", "Thoi gian mo cua (ms)"),
+    ("DOOR_HOLD_TIME", "5000", "INT", "Thoi gian giu cua mo (ms)"),
+    ("MAX_WRONG_PWD", "3", "INT", "So lan sai mat khau toi da"),
+    ("AUTO_MODE", "1", "BOOL", "Che do tu dong mac dinh (1=bat, 0=tat)"),
+]
+
+# Seed du lieu de demo/kiem tra giao dien
+# Luu y: script chi INSERT neu bang dang con rong/hoac khong co key duy nhat.
+DEFAULT_SENSOR_DATA = [
+    # (gas_value, temperature, pir_status, rain_status, system_level, recorded_at)
+    # recorded_at se duoc gan theo thoi gian hien tai trong ham seed.
+    (280, 33.5, 0, 0, "AN_TOAN", 0),
+    (320, 34.8, 0, 1, "CANH_BAO", -10),
+    (650, 41.2, 1, 0, "NGUY_HIEM", -20),
+]
+
+DEFAULT_DEVICE_STATUS = [
+    # (id, fan_status, door_status, window_status, buzzer_status, led_state, auto_mode, system_level, last_message)
+    (1, 0, 0, 0, 0, "SAFE", 1, "AN_TOAN", "HE THONG AN TOAN"),
+]
+
+DEFAULT_ALERT_HISTORY = [
+    # (alert_type, level, message, gas_value, temperature, pir_status, rain_status, created_offset_min, resolved_offset_min)
+    ("GAS", "CANH_BAO", "MQ-3 tang cao - canh bao khi MQ-3 vuot nguong", 320, None, 0, 1, -15, None),
+    ("TEMPERATURE", "NGUY_HIEM", "Nhiet do vuot nguong nguy hiem - kich hoat canh bao", None, 41.2, 1, 0, -8, -3),
+    ("SECURITY", "CANH_BAO", "Phat hien nguoi trong khu vuc - theo doi trang thai", None, None, 1, 0, -6, None),
+]
+
+DEFAULT_CONTROL_COMMANDS = [
+    # (source, account_username, command, parameters, status, response, sent_offset_min, responded_offset_min)
+    ("WINFORM", "admin", "SET_AUTO_MODE", "1", "SUCCESS", "OK", -25, -20),
+    ("MOBILE", "user1", "OPEN_DOOR", "2000", "SENT", None, -12, None),
+    ("SYSTEM", "viewer", "BUZZER_ON", "1", "FAILED", "TIMEOUT", -7, -6),
+]
+
+DEFAULT_DOOR_ACCESS_LOG = [
+    # (input_source, role_matched, result, wrong_count, note, opened_offset_min, closed_offset_min)
+    ("KEYPAD", "user", "SUCCESS", 0, "Mo cua thanh cong", -40, -38),
+    ("TERMITE", "none", "FAILED", 2, "Sai mat khau / pin", -18, None),
+    ("WINFORM", "admin", "LOCKED", 3, "Khoa tam thoi do nhieu lan sai", -5, None),
 ]
 
 
@@ -222,7 +260,7 @@ DEFAULT_THRESHOLDS = [
 # HAM TIEN ICH
 # ============================================================
 
-def get_connection(database: str = None):
+def get_connection(database: str | None = None):
     cfg = dict(DB_CONFIG)
     if database:
         cfg["database"] = database
@@ -233,17 +271,38 @@ def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
+def _utc_now_ms() -> datetime:
+    # mysql dung DATETIME(3) => can day thoi gian co phan ms
+    return datetime.now(timezone.utc)
+
+
+def _format_mysql_dt(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    # 'YYYY-MM-DD HH:MM:SS.mmm'
+    return dt.strftime("%Y-%m-%d %H:%M:%S.") + f"{int(dt.microsecond/1000):03d}"
+
+
+def _get_account_id_by_username(cur, username: str) -> int | None:
+    cur.execute("SELECT id FROM `accounts` WHERE `username`=%s", (username,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    return int(row["id"])
+
+
 # ============================================================
 # MIGRATE: bo cot du thua neu DB cu dang ton tai
 # ============================================================
 
 def _migrate_existing(cur, conn):
     """Xoa cac cot cu neu con ton tai (upgrade tu phien ban truoc)."""
+
     def col_exists(table, col):
         cur.execute(
             "SELECT COUNT(*) as c FROM information_schema.COLUMNS "
             "WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s AND COLUMN_NAME=%s",
-            (DB_NAME, table, col)
+            (DB_NAME, table, col),
         )
         return cur.fetchone()["c"] > 0
 
@@ -268,12 +327,14 @@ def _migrate_existing(cur, conn):
 
     # Doi accessed_at -> opened_at neu con cu
     if col_exists("door_access_log", "accessed_at"):
-        cur.execute("""
+        cur.execute(
+            """
             ALTER TABLE `door_access_log`
             CHANGE `accessed_at` `opened_at`
             DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
             COMMENT 'Thoi diem mo cua / truy cap'
-        """)
+        """
+        )
         conn.commit()
         print("  [MIGRATE] Da doi 'accessed_at' -> 'opened_at'.")
 
@@ -290,7 +351,7 @@ def init_database():
     # Buoc 1: Tao CSDL
     try:
         conn = get_connection()
-        cur  = conn.cursor()
+        cur = conn.cursor()
         cur.execute(SQL_CREATE_DB)
         print(f"[OK] Database '{DB_NAME}' da san sang.")
         cur.close()
@@ -299,18 +360,18 @@ def init_database():
         print(f"[LOI] Khong the ket noi MySQL: {e}")
         sys.exit(1)
 
-    # Buoc 2: Tao cac bang
+    # Buoc 2: Tao cac bang + seed
     try:
         conn = get_connection(DB_NAME)
-        cur  = conn.cursor(dictionary=True)
+        cur = conn.cursor(dictionary=True)
 
         tables = [
-            ("accounts",         SQL_ACCOUNTS),
-            ("sensor_data",      SQL_SENSOR_DATA),
-            ("device_status",    SQL_DEVICE_STATUS),
-            ("alert_history",    SQL_ALERT_HISTORY),
+            ("accounts", SQL_ACCOUNTS),
+            ("sensor_data", SQL_SENSOR_DATA),
+            ("device_status", SQL_DEVICE_STATUS),
+            ("alert_history", SQL_ALERT_HISTORY),
             ("control_commands", SQL_CONTROL_COMMANDS),
-            ("door_access_log",  SQL_DOOR_ACCESS_LOG),
+            ("door_access_log", SQL_DOOR_ACCESS_LOG),
             ("threshold_config", SQL_THRESHOLD_CONFIG),
         ]
 
@@ -323,10 +384,9 @@ def init_database():
         print("\n[MIGRATE] Kiem tra va xoa cot du thua...")
         _migrate_existing(cur, conn)
 
-        # Buoc 4: Row trang thai thiet bi
-        cur.execute("INSERT IGNORE INTO `device_status` (`id`) VALUES (1)")
-        conn.commit()
-        print("[OK] Row trang thai thiet bi (id=1) san sang.")
+        # Buoc 4: (KHONG SEED/UPDATE device_status)
+        # Tran thai thiet bi se de luong Arduino/Proteus cap nhat qua serial bridge
+        # de tranh viec ghi de lenh/dong bo khi cap nhat realtime.
 
         # Buoc 5: Tai khoan mac dinh
         sql_acc = """
@@ -350,6 +410,151 @@ def init_database():
             cur.execute(sql_thr, row)
         conn.commit()
         print(f"[OK] {len(DEFAULT_THRESHOLDS)} nguong canh bao mac dinh da duoc them.")
+
+        # -------------------------------------------------------
+        # Buoc 7: Seed du lieu giai lap (neu bang con rong)
+        # -------------------------------------------------------
+        now = _utc_now_ms()
+
+        # sensor_data: dam bao co it nhat 10 dong de UI co du data demo
+        cur.execute("SELECT COUNT(*) as c FROM `sensor_data`")
+        sensor_count = int(cur.fetchone()["c"])
+        target_sensor_rows = 10
+        if sensor_count < target_sensor_rows:
+            sql_sensor = """
+                INSERT INTO `sensor_data`
+                    (`gas_value`, `temperature`, `pir_status`, `rain_status`, `system_level`, `recorded_at`)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            rows = []
+            # lap lai pattern DEFAULT_SENSOR_DATA de tao nhieu dong (recorded_at khac nhau theo ms)
+            pattern = list(DEFAULT_SENSOR_DATA)
+            # bat dau offset sao cho recorded_at khong trung tu nhom cu (di tuong doi theo current now)
+            base_offset_start = -30  # phu hop demo
+            for i in range(target_sensor_rows - sensor_count):
+                gas_value, temperature, pir_status, rain_status, system_level, _ = pattern[i % len(pattern)]
+                dt = now + timedelta(minutes=base_offset_start - i)
+                rows.append((gas_value, temperature, pir_status, rain_status, system_level, _format_mysql_dt(dt)))
+            cur.executemany(sql_sensor, rows)
+            conn.commit()
+            print(f"[OK] Seed 'sensor_data' (count: {sensor_count} -> {target_sensor_rows}).")
+
+        # device_status: chi seeding default khi chua co (tranh ghi de len trang thai da dieu khien/luu tru)
+        cur.execute("SELECT COUNT(*) as c FROM `device_status` WHERE `id`=1")
+        if int(cur.fetchone()["c"]) == 0:
+            cur.execute(
+                """
+                INSERT INTO `device_status`
+                    (`id`, `fan_status`, `door_status`, `window_status`, `buzzer_status`,
+                     `led_state`, `auto_mode`, `system_level`, `last_message`)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    1,
+                    DEFAULT_DEVICE_STATUS[0][1],
+                    DEFAULT_DEVICE_STATUS[0][2],
+                    DEFAULT_DEVICE_STATUS[0][3],
+                    DEFAULT_DEVICE_STATUS[0][4],
+                    DEFAULT_DEVICE_STATUS[0][5],
+                    DEFAULT_DEVICE_STATUS[0][6],
+                    DEFAULT_DEVICE_STATUS[0][7],
+                    DEFAULT_DEVICE_STATUS[0][8],
+                ),
+            )
+            conn.commit()
+            print("[OK] Seed 'device_status' (id=1) theo default (vi chua co row).")
+
+        # alert_history
+        cur.execute("SELECT COUNT(*) as c FROM `alert_history`")
+        alert_count = int(cur.fetchone()["c"])
+        if alert_count == 0:
+            sql_alert = """
+                INSERT INTO `alert_history`
+                    (`alert_type`, `level`, `message`, `gas_value`, `temperature`, `pir_status`, `rain_status`,
+                     `created_at`, `resolved_at`)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            rows = []
+            for alert_type, level, message, gas_value, temperature, pir_status, rain_status, created_offset_min, resolved_offset_min in DEFAULT_ALERT_HISTORY:
+                created_dt = now + timedelta(minutes=created_offset_min)
+                resolved_dt = None if resolved_offset_min is None else now + timedelta(minutes=resolved_offset_min)
+                rows.append(
+                    (
+                        alert_type,
+                        level,
+                        message,
+                        gas_value,
+                        temperature,
+                        pir_status,
+                        rain_status,
+                        _format_mysql_dt(created_dt),
+                        _format_mysql_dt(resolved_dt),
+                    )
+                )
+            cur.executemany(sql_alert, rows)
+            conn.commit()
+            print("[OK] Seed 'alert_history' (bang dang rong).")
+
+        # control_commands
+        cur.execute("SELECT COUNT(*) as c FROM `control_commands`")
+        cmd_count = int(cur.fetchone()["c"])
+        if cmd_count == 0:
+            sql_cmd = """
+                INSERT INTO `control_commands`
+                    (`source`, `account_id`, `command`, `parameters`, `status`, `response`, `sent_at`, `responded_at`, `created_at`)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            rows = []
+            for source, account_username, command, parameters, status, response, sent_offset_min, responded_offset_min in DEFAULT_CONTROL_COMMANDS:
+                account_id = _get_account_id_by_username(cur, account_username)
+                sent_dt = now + timedelta(minutes=sent_offset_min)
+                responded_dt = None if responded_offset_min is None else now + timedelta(minutes=responded_offset_min)
+                # created_at su dung ngay hien tai (hon sent_at), tinh thuc te khong qua quan trong cho demo
+                created_dt = sent_dt - timedelta(seconds=5)
+                rows.append(
+                    (
+                        source,
+                        account_id,
+                        command,
+                        parameters,
+                        status,
+                        response,
+                        _format_mysql_dt(sent_dt),
+                        _format_mysql_dt(responded_dt),
+                        _format_mysql_dt(created_dt),
+                    )
+                )
+            cur.executemany(sql_cmd, rows)
+            conn.commit()
+            print("[OK] Seed 'control_commands' (bang dang rong).")
+
+        # door_access_log
+        cur.execute("SELECT COUNT(*) as c FROM `door_access_log`")
+        door_count = int(cur.fetchone()["c"])
+        if door_count == 0:
+            sql_door = """
+                INSERT INTO `door_access_log`
+                    (`input_source`, `role_matched`, `result`, `wrong_count`, `note`, `opened_at`, `closed_at`)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            rows = []
+            for input_source, role_matched, result, wrong_count, note, opened_offset_min, closed_offset_min in DEFAULT_DOOR_ACCESS_LOG:
+                opened_dt = now + timedelta(minutes=opened_offset_min)
+                closed_dt = None if closed_offset_min is None else now + timedelta(minutes=closed_offset_min)
+                rows.append(
+                    (
+                        input_source,
+                        role_matched,
+                        result,
+                        wrong_count,
+                        note,
+                        _format_mysql_dt(opened_dt),
+                        _format_mysql_dt(closed_dt),
+                    )
+                )
+            cur.executemany(sql_door, rows)
+            conn.commit()
+            print("[OK] Seed 'door_access_log' (bang dang rong).")
 
         cur.close()
         conn.close()

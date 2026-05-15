@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Smart Home</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card glass">
+            <h2 style="margin-bottom: 30px;">
+                <i class="fas fa-house-lock"></i> ĐĂNG NHẬP
+            </h2>
+            <div id="error-msg" style="color: var(--danger); margin-bottom: 15px; display: none;"></div>
+            <div style="margin-bottom: 20px; text-align: left;">
+                <label style="color: var(--text-muted); font-size: 0.9rem;">Username</label>
+                <input type="text" id="username" class="glass" style="width: 100%; padding: 12px; margin-top: 5px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 10px;">
+            </div>
+            <div style="margin-bottom: 30px; text-align: left;">
+                <label style="color: var(--text-muted); font-size: 0.9rem;">Password</label>
+                <input type="password" id="password" class="glass" style="width: 100%; padding: 12px; margin-top: 5px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 10px;">
+            </div>
+            <button class="btn btn-primary" style="width: 100%; padding: 15px;" onclick="doLogin()">SIGN IN</button>
+        </div>
+    </div>
+
+    <script>
+        async function doLogin() {
+            const u = document.getElementById('username').value;
+            const p = document.getElementById('password').value;
+            const err = document.getElementById('error-msg');
+
+            const resp = await fetch('/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: u, password: p})
+            });
+            const result = await resp.json();
+            if (result.success) {
+                window.location.href = '/';
+            } else {
+                err.textContent = result.message;
+                err.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

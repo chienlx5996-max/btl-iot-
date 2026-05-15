@@ -18,9 +18,12 @@
 
 import mysql.connector
 from mysql.connector import Error
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import bcrypt
 from typing import Optional, Dict, Any, List
+
+# Múi giờ Việt Nam (UTC+7)
+VIETNAM_TZ = timezone(timedelta(hours=7))
 
 
 # ============================================================
@@ -33,6 +36,8 @@ DB_CONFIG = {
     "password": "123456789@",
     "database": "nha_thong_minh",
     "charset":  "utf8mb4",
+    "get_warnings": True,
+    "use_pure": True,
 }
 
 
@@ -49,7 +54,15 @@ class DBHelper:
     # INTERNAL
     # ----------------------------------------------------------
     def _connect(self):
-        return mysql.connector.connect(**self.config)
+        conn = mysql.connector.connect(**self.config)
+        # Set MySQL session timezone to UTC+7
+        conn.cmd_query("SET time_zone = '+07:00'")
+        return conn
+    
+    @staticmethod
+    def get_now_string():
+        """Lấy thời gian hiện tại dạng string (Việt Nam UTC+7) để insert vào DB."""
+        return datetime.now(VIETNAM_TZ).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
 
     def _execute(self, sql: str, params: tuple = (), fetch: bool = False):
         conn = self._connect()
@@ -215,26 +228,54 @@ class DBHelper:
         )
 
     def sync_device_status_from_arduino(self, data: Dict):
-        """Cap nhat trang thai tu ban tin Arduino da parse."""
-        fan    = 1 if data.get("QUAT")       == "BAT"     else 0
-        door   = 1 if data.get("CUA_CHINH")  == "MO"      else 0
-        window = 1 if data.get("CUA_SO")     == "MO"      else 0
-        buzzer = 1 if data.get("COI_BAO")    == "BAT"     else 0
-        auto   = 1 if data.get("CHE_DO")     == "TU_DONG" else 0
+        """Cap nhat trang thai tu ban tin Arduino da parse.
+
+        Lưu ý quan trọng:
+        - Mô hình hiện tại Arduino gửi sensor dạng STAT|GAS=...|TEMP=...|PIR:...|RAIN:... (không có QUAT/CUA/COI_BAO).
+        - Vì vậy web điều khiển (qua /api/control) sẽ ghi device_status trước.
+        - Nếu Arduino không gửi trạng thái quạt/cửa/buzzer, ta KHÔNG nên ghi đè về 0.
+
+        BỔ SUNG chống "quay mãi":
+        - Khi đang ở MODE TỰ ĐỘNG (device_status.auto_mode=1) thì không ghi đè các trạng thái thiết bị
+          (fan/door/window/buzzer) từ Arduino vào DB nữa.
+        - Trạng thái thiết bị khi Auto bật sẽ được điều khiển/đồng bộ theo cơ chế khác (hoặc từ command side),
+          tránh việc serial liên tục ghi đè làm UI như "vừa bật vừa tắt".
+        """
         level_map = {
             "AN TOAN":  "AN_TOAN",
             "CANH BAO": "CANH_BAO",
             "NGUY HIEM":"NGUY_HIEM",
         }
         level = level_map.get(data.get("MUC_CANH_BAO", "AN TOAN"), "AN_TOAN")
-        led_map = {"AN_TOAN": "SAFE", "CANH_BAO": "WARNING", "NGUY_HIEM": "DANGER"}
+        led_map = {"AN TOAN": "SAFE", "CANH BAO": "WARNING", "NGUY HIEM":"DANGER"}
 
-        self.update_device_status(
-            fan_status=fan, door_status=door, window_status=window,
-            buzzer_status=buzzer, auto_mode=auto,
-            system_level=level, led_state=led_map.get(level, "SAFE"),
-            last_message=data.get("THONG_BAO", "")
-        )
+        # Check current auto_mode (để tránh serial ghi đè khi Auto đang bật)
+        try:
+            current_status = self.get_device_status() or {}
+            is_auto_mode_on = int(current_status.get("auto_mode", 0)) == 1
+        except Exception:
+            is_auto_mode_on = False
+
+        update_kwargs: Dict[str, Any] = {
+            "system_level": level,
+            "led_state": led_map.get(level, "SAFE"),
+            "last_message": data.get("THONG_BAO", ""),
+        }
+
+        # Chỉ cập nhật fan/door/window/buzzer nếu Arduino có field tương ứng
+        # và chỉ khi HỆ KHÔNG đang ở auto mode.
+        if not is_auto_mode_on:
+            if "QUAT" in data:
+                update_kwargs["fan_status"] = 1 if data.get("QUAT") == "BAT" else 0
+            if "CUA_CHINH" in data:
+                update_kwargs["door_status"] = 1 if data.get("CUA_CHINH") == "MO" else 0
+            if "CUA_SO" in data:
+                update_kwargs["window_status"] = 1 if data.get("CUA_SO") == "MO" else 0
+            if "COI_BAO" in data:
+                update_kwargs["buzzer_status"] = 1 if data.get("COI_BAO") == "BAT" else 0
+
+        # Không cập nhật auto_mode từ Arduino tại đây.
+        self.update_device_status(**update_kwargs)
 
     # ----------------------------------------------------------
     # 4. LICH SU CANH BAO - ALERT HISTORY
@@ -322,6 +363,32 @@ class DBHelper:
                ORDER BY c.`created_at` DESC LIMIT %s""",
             (limit,), fetch=True
         )
+
+    def get_pending_commands(
+        self,
+        limit: int = 50,
+        source: str = None,
+        exclude_source: str = None,
+    ) -> List[Dict]:
+        """
+        Lay danh sach lenh dang cho xu ly (PENDING) de gui xuong Arduino/Proteus.
+
+        - source: chỉ lấy theo source
+        - exclude_source: loại trừ theo source (dùng để tránh gửi trùng khi webapp đã bridge riêng)
+        """
+        sql = "SELECT * FROM `control_commands` WHERE `status` = 'PENDING'"
+        params: List[Any] = []
+
+        if source:
+            sql += " AND `source` = %s"
+            params.append(source)
+        if exclude_source:
+            sql += " AND `source` != %s"
+            params.append(exclude_source)
+
+        sql += " ORDER BY `created_at` ASC LIMIT %s"
+        params.append(limit)
+        return self._execute(sql, tuple(params), fetch=True)
 
     # ----------------------------------------------------------
     # 6. LICH SU MO CUA - DOOR ACCESS LOG
@@ -424,8 +491,52 @@ class DBHelper:
     def parse_arduino_line(line: str) -> Dict[str, str]:
         """
         Chuyen chuoi Arduino sang dict.
-        "KHI=320;NHIET_DO=36.5;..." -> {"KHI": "320", "NHIET_DO": "36.5", ...}
+
+        Hỗ trợ 2 format (tùy cấu hình Arduino/Proteus):
+          1) Key=Value;Key2=Value2;...
+             "KHI=320;NHIET_DO=36.5;..." -> {"KHI": "320", "NHIET_DO": "36.5", ...}
+
+          2) STAT|GAS:<int>|TEMP:<float>|PIR:<0|1>|RAIN:<0|1>|MODE:<A|M>
+             "STAT|GAS:320|TEMP:36.5|PIR:0|RAIN:1|MODE:A" -> {...}
         """
+        line = (line or "").strip()
+        if not line:
+            return {}
+
+        # Format: STAT|...
+        if line.startswith("STAT|"):
+            parts = line.split("|")
+            result: Dict[str, str] = {}
+            # Support variants:
+            #   STAT|GAS:320|TEMP:36.5|...
+            #   STAT|GAS=320|TEMP=36.5|...
+            for p in parts[1:]:
+                # Prefer ":"; fallback to "="
+                if ":" in p:
+                    k, _, v = p.partition(":")
+                elif "=" in p:
+                    k, _, v = p.partition("=")
+                else:
+                    continue
+
+                k = k.strip().upper()
+                v = v.strip()
+
+                if k == "GAS":
+                    result["KHI"] = v
+                elif k == "TEMP":
+                    result["NHIET_DO"] = v
+                elif k == "PIR":
+                    result["CO_NGUOI"] = v
+                elif k == "RAIN":
+                    result["MUA"] = v
+                elif k == "MODE":
+                    result["CHE_DO"] = "TU_DONG" if v == "A" else "THU_CONG"
+                else:
+                    result[k] = v
+            return result
+
+        # Format: KHI=...;NHIET_DO=...;...
         result = {}
         for part in line.strip().split(";"):
             if "=" in part:
@@ -440,33 +551,67 @@ class DBHelper:
           - Luu sensor_data (recorded_at = NOW(3))
           - Cap nhat device_status (updated_at = NOW(3))
           - Tu dong tao alert neu can (created_at = NOW(3))
-        Tra ve True neu xu ly thanh cong.
+
+        Lưu ý:
+        - Arduino hiện tại gửi sensor theo dạng STAT|GAS:...|TEMP:...
+          => có thể không có MUC_CANH_BAO/THONG_BAO.
+        - Vì vậy level sẽ được tính dựa vào ngưỡng trong threshold_config.
         """
         data = self.parse_arduino_line(line)
         if "KHI" not in data or "NHIET_DO" not in data:
             return False
 
         try:
-            gas  = int(data["KHI"])
+            gas = int(data["KHI"])
             temp = float(data["NHIET_DO"])
-            pir  = int(data.get("CO_NGUOI", 0))
+            # Arduino hiện không gửi CO_NGUOI/MUA -> mặc định 0
+            pir = int(data.get("CO_NGUOI", 0))
             rain = int(data.get("MUA", 0))
         except (ValueError, KeyError):
             return False
 
-        level_map = {
-            "AN TOAN":  "AN_TOAN",
-            "CANH BAO": "CANH_BAO",
-            "NGUY HIEM":"NGUY_HIEM",
-        }
-        level = level_map.get(data.get("MUC_CANH_BAO", "AN TOAN"), "AN_TOAN")
+        # ---- Tính level dựa trên threshold_config ----
+        gas_warning = self.get_threshold("GAS_WARNING", 300)
+        gas_danger = self.get_threshold("GAS_DANGER", 600)
+        temp_warning = self.get_threshold("TEMP_WARNING", 35.0)
+        temp_danger = self.get_threshold("TEMP_DANGER", 40.0)
+
+        is_danger = (gas >= gas_danger) or (temp >= temp_danger)
+        is_warning = (gas >= gas_warning) or (temp >= temp_warning)
+
+        if is_danger:
+            level = "NGUY_HIEM"
+        elif is_warning:
+            level = "CANH_BAO"
+        else:
+            level = "AN_TOAN"
 
         self.insert_sensor_data(gas, temp, pir, rain, level)
-        self.sync_device_status_from_arduino(data)
+
+        # sync_device_status_from_arduino dùng map QUAT/CUA/... hiện không có,
+        # nhưng vẫn set system_level/led_state/last_message theo level.
+        # Ta cung cấp lại MUC_CANH_BAO/THONG_BAO để hàm sync không rơi về default.
+        # (Nếu Arduino có gửi thêm, parse_arduino_line sẽ trả về các field đó.)
+        enriched = dict(data)
+        enriched["MUC_CANH_BAO"] = {
+            "AN_TOAN": "AN TOAN",
+            "CANH_BAO": "CANH BAO",
+            "NGUY_HIEM": "NGUY HIEM",
+        }.get(level, "AN TOAN")
+        enriched["THONG_BAO"] = data.get("THONG_BAO") or level
+
+        self.sync_device_status_from_arduino(enriched)
 
         if auto_alert and level in ("CANH_BAO", "NGUY_HIEM"):
-            msg = data.get("THONG_BAO", level)
-            alert_type = "GAS" if gas > 300 else "TEMPERATURE" if temp > 35 else "COMBO"
+            msg = enriched.get("THONG_BAO", level)
+            # phân loại alert (tương đối) dựa vào ngưỡng chính
+            alert_type = (
+                "GAS"
+                if gas >= gas_warning and not (temp >= temp_warning and gas < gas_warning)
+                else "TEMPERATURE"
+                if temp >= temp_warning and not (gas >= gas_warning and temp < temp_warning)
+                else "COMBO"
+            )
             self.insert_alert(alert_type, level, msg, gas, temp, pir, rain)
 
         return True

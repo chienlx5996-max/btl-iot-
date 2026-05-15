@@ -107,7 +107,7 @@ def process_line(line: str, db: DBHelper = None, save_to_db: bool = True):
         return
 
     # ------- Ban tin du lieu cam bien -------
-    if line.startswith("KHI="):
+    if line.startswith("KHI=") or line.startswith("STAT|"):
         try:
             ok = db.process_arduino_line(line)
             if ok:
@@ -257,11 +257,50 @@ def run_reader(port: str, baud: int, save_to_db: bool):
                 print("\n[THOAT] Nguoi dung nhan Ctrl+C.")
                 sys.exit(0)
 
+
+    def try_send_pending_commands():
+        """
+        Web (và WinForms) chỉ ghi vào DB bảng control_commands.
+        Reader này sẽ:
+          - Lấy command PENDING (theo thứ tự tạo)
+          - Gửi xuống COM đúng command string (FAN_ON, DOOR_OPEN, ...)
+          - Cập nhật SENT / SUCCESS / FAILED
+        """
+        if not save_to_db or db is None:
+            return
+
+        # Tránh trùng luồng gửi lệnh: Flask/webapp đã bridge PENDING theo source='MOBILE'
+        pending = db.get_pending_commands(limit=10, exclude_source="MOBILE")
+        if not pending:
+            return
+
+        for cmd_row in pending:
+            command_id = cmd_row["id"]
+            command = cmd_row.get("command")
+            status_before = cmd_row.get("status")
+
+            if not command:
+                db.mark_command_result(command_id, success=False, response="EMPTY_COMMAND")
+                continue
+
+            # Arduino hiện tại KHÔNG gửi ACK kiểu LENH=/KET_QUA=...
+            # => coi như thành công nếu TX gửi được lên serial.
+            try:
+                ser.write((str(command) + "\n").encode("ascii", errors="replace"))
+                db.mark_command_sent(command_id)
+                db.mark_command_result(command_id, success=True, response="TX_OK")
+                print(f"         [TX-DB] Sent command id={command_id} cmd={command} (status was {status_before}) -> SUCCESS")
+            except Exception as txe:
+                db.mark_command_result(command_id, success=False, response=f"TX_ERROR: {txe}")
+                print(f"         [TX-LOI] command id={command_id} cmd={command} err={txe}")
+                continue
+
     # --- Vong lap doc ---
     try:
         buf = ""
         while True:
             try:
+                # 1) Ưu tiên xử lý RX nếu có dữ liệu
                 if ser.in_waiting > 0:
                     raw = ser.read(ser.in_waiting)
                     text = raw.decode("utf-8", errors="replace")
@@ -276,6 +315,9 @@ def run_reader(port: str, baud: int, save_to_db: bool):
                         except Exception as pe:
                             print(f"[LOI] process_line crash: {pe}")
                 else:
+                    # 2) Không có RX: thỉnh thoảng poll DB để gửi lệnh điều khiển
+                    # (web/WinForms tạo PENDING, reader sẽ gửi xuống COM)
+                    try_send_pending_commands()
                     time.sleep(0.05)
 
             except serial.SerialException as e:

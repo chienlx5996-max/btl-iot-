@@ -36,46 +36,7 @@ async function updateStatus() {
 
 // --- Device Control ---
 async function control(devicePrefix) {
-    // Chặn thao tác thủ công khi đang bật Auto
-    const autoEl = document.getElementById('auto-switch');
-    const isAutoOn = autoEl ? autoEl.checked : false;
-
-    if (devicePrefix !== 'MODE' && isAutoOn) {
-        // Nếu Auto đang bật mà user bấm điều khiển thủ công (quạt/cửa/cửa sổ/còi),
-        // thì chuyển sang MANUAL trước để tránh Arduino autoLogic ghi đè khiến “không mở/tắt được”.
-        try {
-            await fetch('/api/control', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: 'MODE_MANUAL'})
-            });
-            // Chờ 1 chút để Arduino/DB chuyển trạng thái
-            await new Promise(resolve => setTimeout(resolve, 300));
-            updateStatus();
-        } catch (e) {
-            console.error("[Control] Failed to switch MODE_MANUAL:", e);
-            alert("Lỗi kết nối server khi chuyển sang Thủ công.");
-            updateStatus();
-            return;
-        }
-    }
-
-    // Get the element and the NEW state (after toggle)
-    // NOTE: IDs in index.html:
-    //   FAN/DOOR/WINDOW/BUZZER use: <prefix>-switch (lowercase)
-    //   MODE uses: auto-switch (not mode-switch)
-    const elementId =
-        devicePrefix === 'MODE'
-            ? 'auto-switch'
-            : devicePrefix.toLowerCase() + '-switch';
-
-    const switchElement = document.getElementById(elementId);
-    if (!switchElement) {
-        console.error(`[Control] Missing element id='${elementId}' for devicePrefix='${devicePrefix}'`);
-        return;
-    }
-
-    const isChecked = switchElement.checked; // Get current state after toggle
+    const isChecked = document.getElementById(devicePrefix.toLowerCase() + '-switch').checked;
     let action = '';
 
     if (devicePrefix === 'MODE') {
@@ -87,8 +48,6 @@ async function control(devicePrefix) {
         }
     }
 
-    console.log(`[Control] Device: ${devicePrefix}, State: ${isChecked}, Action: ${action}`);
-
     try {
         const resp = await fetch('/api/control', {
             method: 'POST',
@@ -96,36 +55,12 @@ async function control(devicePrefix) {
             body: JSON.stringify({action: action})
         });
         const result = await resp.json();
-        console.log(`[Control] Response: ${JSON.stringify(result)}`);
-        
         if (!result.success) {
             alert("Lỗi: " + result.message);
             updateStatus(); // Revert UI
-        } else {
-            // If switching to MANUAL mode (turning OFF auto), turn off all devices immediately
-            if (devicePrefix === 'MODE' && !isChecked) {
-                console.log("[Control] Triggering AUTO_SHUTDOWN");
-                setTimeout(() => sendAutoShutdown(), 500);
-            }
         }
     } catch (e) {
         alert("Lỗi kết nối server");
-        console.error("[Control] Error:", e);
-    }
-}
-
-// --- Auto Shutdown (turn off all devices) ---
-async function sendAutoShutdown() {
-    try {
-        const resp = await fetch('/api/control', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action: 'AUTO_SHUTDOWN'})
-        });
-        const result = await resp.json();
-        console.log("Auto shutdown response:", result);
-    } catch (e) {
-        console.error("Auto shutdown error:", e);
     }
 }
 

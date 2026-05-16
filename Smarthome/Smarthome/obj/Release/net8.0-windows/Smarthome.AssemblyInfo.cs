@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Smarthome")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4c6026d93e09cfaed6ae9316dee502d2cdc606d5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+579337018965a0d2027d7e471d5022cd0873610b")]
 [assembly: System.Reflection.AssemblyProductAttribute("Smarthome")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Smarthome")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

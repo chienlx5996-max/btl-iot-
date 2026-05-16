@@ -10,7 +10,16 @@ VIETNAM_TZ = timezone(timedelta(hours=7))
 
 # Thêm thư mục gốc vào path để import database
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from database.db_helper import DBHelper
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'btl-iot-', 'database')))
+
+try:
+    from database.db_helper import DBHelper
+except ImportError:
+    try:
+        from db_helper import DBHelper
+    except ImportError:
+        print("[ERROR] Cannot import DBHelper from database folder")
+        raise
 
 app = Flask(__name__)
 app.secret_key = 'smart_home_secret_key'  # Thay đổi trong thực tế
@@ -19,28 +28,11 @@ db = DBHelper()
 # ============================================================
 # SERIAL BRIDGE (gộp serial_reader vào cùng process Flask)
 # ============================================================
+# NOTE: serial_reader.py sẽ chạy RIÊNG như daemon process
+# KHÔNG chạy serial thread trong Flask nữa để tránh conflict
+SERIAL_PORT = "COM2"
 SERIAL_BAUD = 9600
 _SERIAL_THREAD_STARTED = False
-_SERIAL_READER_STARTED = False
-
-def _pick_serial_port(preferred: str = "COM2") -> str:
-    """
-    Tránh case cấu hình COM2 bị 'port not found' trong khi máy đang có COM khác.
-    Ưu tiên COM2 nếu tồn tại, ngược lại lấy port đầu tiên có sẵn.
-    """
-    try:
-        import serial.tools.list_ports
-        ports = [p.device for p in serial.tools.list_ports.comports()]
-        if preferred in ports:
-            return preferred
-        if ports:
-            return ports[0]
-    except Exception:
-        pass
-    # fallback: trả về preferred để giữ nguyên hành vi cũ nếu list_ports lỗi
-    return preferred
-
-SERIAL_PORT = _pick_serial_port("COM2")
 
 
 # ============================================================
@@ -129,12 +121,6 @@ def get_status():
     device = db.get_device_status()
     alerts = db.get_active_alerts()
 
-    # Debug để kiểm tra web đang lấy gas gì
-    if sensor:
-        print(f"[API/status] latest Gas={sensor.get('gas_value')} Temp={sensor.get('temperature')} at={sensor.get('recorded_at')}")
-    else:
-        print("[API/status] latest sensor is None")
-
     return jsonify({
         'sensor': sensor,
         'device': device,
@@ -152,7 +138,7 @@ def control_device():
         return jsonify({'success': False, 'message': 'Bạn không có quyền điều khiển'})
 
     data = request.get_json(force=True) or {}
-    action = data.get('action')  # e.g., 'FAN_ON', 'DOOR_OPEN', 'AUTO_SHUTDOWN'
+    action = data.get('action')  # e.g., 'FAN_ON', 'DOOR_OPEN'
 
     status_update = {}
     if action == 'FAN_ON':
@@ -175,15 +161,6 @@ def control_device():
         status_update = {'auto_mode': 1}
     elif action == 'MODE_MANUAL':
         status_update = {'auto_mode': 0}
-    elif action == 'AUTO_SHUTDOWN':
-        # Turn off all devices: fan, door, window, buzzer
-        status_update = {
-            'fan_status': 0,
-            'door_status': 0,
-            'window_status': 0,
-            'buzzer_status': 0,
-            'auto_mode': 0
-        }
 
     try:
         db.insert_command(source='MOBILE', command=action, account_id=session['user_id'])
@@ -367,229 +344,22 @@ def get_door_access_logs():
 # ============================================================
 # SERIAL BRIDGE (thread nền trong Flask)
 # ============================================================
-def _start_serial_reader_background():
-    """
-    Chạy loop đọc dữ liệu sensor từ COM và lưu vào DB.
-    Thread này liên tục nhận dữ liệu từ Arduino và cập nhật database.
-    """
-    global _SERIAL_READER_STARTED
-    if _SERIAL_READER_STARTED:
-        return
-    _SERIAL_READER_STARTED = True
-
-    def _reader_worker():
-        try:
-            import serial
-        except Exception as e:
-            print(f"[SERIAL-READER] Thiếu pyserial: {e}")
-            return
-
-        from database.db_helper import DBHelper as _DBHelper
-
-        db_local = _DBHelper()
-        ser = None
-        try:
-            ser = serial.Serial(
-                port=SERIAL_PORT,
-                baudrate=SERIAL_BAUD,
-                timeout=2
-            )
-            print(f"[SERIAL-READER] Connected {SERIAL_PORT} @ {SERIAL_BAUD}")
-        except Exception as e:
-            print(f"[SERIAL-READER] Cannot open COM {SERIAL_PORT}@{SERIAL_BAUD}: {e}")
-            return
-
-        buf = ""
-        while True:
-            try:
-                # 1) TX: gửi command PENDING (cùng thread, cùng ser -> tránh PermissionError)
-                pending = db_local.get_pending_commands(limit=10, source='MOBILE')
-                if pending:
-                    print(f"[SERIAL-RX/TX] Pending count={len(pending)}")
-                    for row in pending:
-                        command_id = row["id"]
-                        command = row.get("command")
-                        if not command:
-                            db_local.mark_command_result(command_id, success=False, response="EMPTY_COMMAND")
-                            continue
-
-                        commands_to_send = []
-                        if command == 'AUTO_SHUTDOWN':
-                            commands_to_send = [
-                                'MODE_MANUAL',
-                                'FAN_OFF',
-                                'DOOR_CLOSE',
-                                'WINDOW_CLOSE',
-                                'BUZZER_OFF'
-                            ]
-                        else:
-                            commands_to_send = [command]
-
-                        all_success = True
-                        for cmd in commands_to_send:
-                            try:
-                                ser.write((str(cmd) + "\n").encode("ascii", errors="replace"))
-                                db_local.mark_command_sent(command_id)
-                                print(f"[SERIAL-RX/TX][TX] id={command_id} cmd={cmd}")
-                                time.sleep(0.1)
-                            except Exception as txe:
-                                all_success = False
-                                print(f"[SERIAL-RX/TX][TX-ERROR] id={command_id} cmd={cmd} error={txe}")
-
-                        if not all_success and command == 'AUTO_SHUTDOWN':
-                            db_local.mark_command_result(command_id, success=False, response="TX_ERROR")
-                        elif command == 'AUTO_SHUTDOWN':
-                            db_local.mark_command_result(command_id, success=True, response="SHUTDOWN_OK")
-
-                # 2) RX: đọc dữ liệu từ Arduino
-                if ser.in_waiting > 0:
-                    raw = ser.read(ser.in_waiting)
-                    text = raw.decode("utf-8", errors="replace")
-                    buf += text
-
-                    # Xử lý từng dòng kết thúc bằng \n
-                    while "\n" in buf:
-                        line, buf = buf.split("\n", 1)
-                        line = line.replace("\r", "").strip()
-
-                        if line:
-                            ts = time.strftime("%H:%M:%S")
-                            print(f"[{ts}] << {line}")
-
-                            is_sensor_line = (
-                                line.startswith("STAT|")
-                                or "KHI=" in line
-                                or ("GAS:" in line and "TEMP:" in line)
-                            )
-                            if is_sensor_line:
-                                try:
-                                    ok = db_local.process_arduino_line(line)
-                                    if ok:
-                                        data = _DBHelper.parse_arduino_line(line)
-                                        print(
-                                            f"         [DB] Sensor saved | Gas={data.get('KHI')} "
-                                            f"Temp={data.get('NHIET_DO')}C"
-                                        )
-                                except Exception as e:
-                                    print(f"         [DB-ERROR] {e}")
-                else:
-                    time.sleep(0.05)
-
-            except serial.SerialException as e:
-                print(f"\n[SERIAL-READER] Lost connection: {e}")
-                print("      Reconnecting in 5 seconds...")
-                time.sleep(5)
-                try:
-                    ser.close()
-                    ser.open()
-                    print(f"[SERIAL-READER] Reconnected {SERIAL_PORT}")
-                except Exception as re:
-                    print(f"[SERIAL-READER] Reconnect failed: {re}")
-            except Exception as e:
-                print(f"[SERIAL-READER] Error: {e}")
-                time.sleep(0.1)
-
-    thread = threading.Thread(target=_reader_worker, daemon=True)
-    thread.start()
-
-
 def _start_serial_bridge_background():
     """
-    Chạy loop gửi command PENDING xuống COM để web điều khiển được Proteus/Arduino.
-    Lưu ý: thread này chỉ gửi lệnh điều khiển; phần đọc sensor/alert vẫn do serial_reader.py xử lý như hiện tại.
+    DEPRECATED: Serial thread không chạy trong Flask nữa.
+    Để tránh conflict với serial_reader.py (chạy riêng),
+    Flask chỉ ghi PENDING commands vào DB.
+    serial_reader.py sẽ đọc, gửi xuống COM, và xử lý response.
     """
     global _SERIAL_THREAD_STARTED
-    if _SERIAL_THREAD_STARTED:
-        return
     _SERIAL_THREAD_STARTED = True
-
-    def _worker():
-        try:
-            import serial
-        except Exception as e:
-            print(f"[SERIAL-BRIDGE] Thiếu pyserial: {e}")
-            return
-
-        # Import DBHelper (để tránh capture db cũ trong thread nếu cần)
-        from database.db_helper import DBHelper as _DBHelper
-
-        db_local = _DBHelper()
-        ser = None
-        try:
-            ser = serial.Serial(
-                port=SERIAL_PORT,
-                baudrate=SERIAL_BAUD,
-                timeout=2
-            )
-            print(f"[SERIAL-BRIDGE] Connected {SERIAL_PORT} @ {SERIAL_BAUD}")
-        except Exception as e:
-            print(f"[SERIAL-BRIDGE] Cannot open COM {SERIAL_PORT}@{SERIAL_BAUD}: {e}")
-            return
-
-        while True:
-            try:
-                pending = db_local.get_pending_commands(limit=10, source='MOBILE')
-                if not pending:
-                    time.sleep(0.05)
-                    continue
-
-                print(f"[SERIAL-BRIDGE] Pending count={len(pending)}")
-                for row in pending:
-                    command_id = row["id"]
-                    command = row.get("command")
-                    if not command:
-                        print(f"[SERIAL-BRIDGE] EMPTY command for id={command_id}")
-                        db_local.mark_command_result(command_id, success=False, response="EMPTY_COMMAND")
-                        continue
-
-                    # Handle AUTO_SHUTDOWN by expanding to individual commands
-                    # Important: also switch the Arduino back to MANUAL,
-                    # otherwise autoLogic() will immediately turn devices back on.
-                    commands_to_send = []
-                    if command == 'AUTO_SHUTDOWN':
-                        commands_to_send = [
-                            'MODE_MANUAL',
-                            'FAN_OFF',
-                            'DOOR_CLOSE',
-                            'WINDOW_CLOSE',
-                            'BUZZER_OFF'
-                        ]
-                    else:
-                        commands_to_send = [command]
-
-                    all_success = True
-                    for cmd in commands_to_send:
-                        try:
-                            ser.write((str(cmd) + "\n").encode("ascii", errors="replace"))
-                            db_local.mark_command_sent(command_id)
-                            print(f"[SERIAL-BRIDGE][TX] id={command_id} cmd={cmd}")
-                            time.sleep(0.1)  # Small delay between commands
-                        except Exception as txe:
-                            all_success = False
-                            print(f"[SERIAL-BRIDGE][TX-ERROR] id={command_id} cmd={cmd} error={txe}")
-                    
-                    if not all_success and command == 'AUTO_SHUTDOWN':
-                        db_local.mark_command_result(command_id, success=False, response=f"TX_ERROR")
-                    elif command == 'AUTO_SHUTDOWN':
-                        db_local.mark_command_result(command_id, success=True, response="SHUTDOWN_OK")
-            except Exception as e:
-                # Không để thread chết vì lỗi tạm thời
-                print(f"[SERIAL-BRIDGE] Loop error: {e}")
-                time.sleep(0.2)
-
-    thread = threading.Thread(target=_worker, daemon=True)
-    thread.start()
+    print("[SERIAL-BRIDGE] Disabled - use serial_reader.py instead")
+    return
 
 
 # ============================================================
 # Start
 # ============================================================
-# IMPORTANT:
-# Không phụ thuộc `if __name__ == '__main__'` vì bạn đang chạy bằng VSCode config
-# (có thể không vào nhánh này) -> web sẽ "update DB/UI" nhưng không TX xuống COM.
-# Vì vậy: khởi động background threads ngay khi module được import/exec bởi Flask.
-_start_serial_reader_background()   # Đọc sensor + TX PENDING xuống Arduino (gộp chung để tránh mở COM 2 lần)
-
 if __name__ == '__main__':
-    # Tránh Flask debug/reloader khởi chạy lại process -> tranh COM gây "Access is denied"
-    app.run(debug=False, use_reloader=False, host='0.0.0.0', port=5000)
+    _start_serial_bridge_background()
+    app.run(debug=True, host='0.0.0.0', port=5000)

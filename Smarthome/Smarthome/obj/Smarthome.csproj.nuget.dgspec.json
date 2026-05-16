@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\UTH\\BaiHoc\\IOT\\BTL\\btl-iot-\\Smarthome\\Smarthome\\Smarthome.csproj": {}
+    "D:\\UTH\\BaiHoc\\IOT\\TestWeb\\IOT\\Smarthome\\Smarthome\\Smarthome.csproj": {}
   },
   "projects": {
-    "D:\\UTH\\BaiHoc\\IOT\\BTL\\btl-iot-\\Smarthome\\Smarthome\\Smarthome.csproj": {
+    "D:\\UTH\\BaiHoc\\IOT\\TestWeb\\IOT\\Smarthome\\Smarthome\\Smarthome.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\UTH\\BaiHoc\\IOT\\BTL\\btl-iot-\\Smarthome\\Smarthome\\Smarthome.csproj",
+        "projectUniqueName": "D:\\UTH\\BaiHoc\\IOT\\TestWeb\\IOT\\Smarthome\\Smarthome\\Smarthome.csproj",
         "projectName": "Smarthome",
-        "projectPath": "D:\\UTH\\BaiHoc\\IOT\\BTL\\btl-iot-\\Smarthome\\Smarthome\\Smarthome.csproj",
+        "projectPath": "D:\\UTH\\BaiHoc\\IOT\\TestWeb\\IOT\\Smarthome\\Smarthome\\Smarthome.csproj",
         "packagesPath": "C:\\Users\\Admin\\.nuget\\packages\\",
-        "outputPath": "D:\\UTH\\BaiHoc\\IOT\\BTL\\btl-iot-\\Smarthome\\Smarthome\\obj\\",
+        "outputPath": "D:\\UTH\\BaiHoc\\IOT\\TestWeb\\IOT\\Smarthome\\Smarthome\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

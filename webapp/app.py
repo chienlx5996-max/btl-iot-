@@ -19,10 +19,28 @@ db = DBHelper()
 # ============================================================
 # SERIAL BRIDGE (gộp serial_reader vào cùng process Flask)
 # ============================================================
-SERIAL_PORT = "COM2"
 SERIAL_BAUD = 9600
 _SERIAL_THREAD_STARTED = False
 _SERIAL_READER_STARTED = False
+
+def _pick_serial_port(preferred: str = "COM2") -> str:
+    """
+    Tránh case cấu hình COM2 bị 'port not found' trong khi máy đang có COM khác.
+    Ưu tiên COM2 nếu tồn tại, ngược lại lấy port đầu tiên có sẵn.
+    """
+    try:
+        import serial.tools.list_ports
+        ports = [p.device for p in serial.tools.list_ports.comports()]
+        if preferred in ports:
+            return preferred
+        if ports:
+            return ports[0]
+    except Exception:
+        pass
+    # fallback: trả về preferred để giữ nguyên hành vi cũ nếu list_ports lỗi
+    return preferred
+
+SERIAL_PORT = _pick_serial_port("COM2")
 
 
 # ============================================================
@@ -384,7 +402,46 @@ def _start_serial_reader_background():
         buf = ""
         while True:
             try:
-                # Đọc dữ liệu từ Arduino
+                # 1) TX: gửi command PENDING (cùng thread, cùng ser -> tránh PermissionError)
+                pending = db_local.get_pending_commands(limit=10, source='MOBILE')
+                if pending:
+                    print(f"[SERIAL-RX/TX] Pending count={len(pending)}")
+                    for row in pending:
+                        command_id = row["id"]
+                        command = row.get("command")
+                        if not command:
+                            db_local.mark_command_result(command_id, success=False, response="EMPTY_COMMAND")
+                            continue
+
+                        commands_to_send = []
+                        if command == 'AUTO_SHUTDOWN':
+                            commands_to_send = [
+                                'MODE_MANUAL',
+                                'FAN_OFF',
+                                'DOOR_CLOSE',
+                                'WINDOW_CLOSE',
+                                'BUZZER_OFF'
+                            ]
+                        else:
+                            commands_to_send = [command]
+
+                        all_success = True
+                        for cmd in commands_to_send:
+                            try:
+                                ser.write((str(cmd) + "\n").encode("ascii", errors="replace"))
+                                db_local.mark_command_sent(command_id)
+                                print(f"[SERIAL-RX/TX][TX] id={command_id} cmd={cmd}")
+                                time.sleep(0.1)
+                            except Exception as txe:
+                                all_success = False
+                                print(f"[SERIAL-RX/TX][TX-ERROR] id={command_id} cmd={cmd} error={txe}")
+
+                        if not all_success and command == 'AUTO_SHUTDOWN':
+                            db_local.mark_command_result(command_id, success=False, response="TX_ERROR")
+                        elif command == 'AUTO_SHUTDOWN':
+                            db_local.mark_command_result(command_id, success=True, response="SHUTDOWN_OK")
+
+                # 2) RX: đọc dữ liệu từ Arduino
                 if ser.in_waiting > 0:
                     raw = ser.read(ser.in_waiting)
                     text = raw.decode("utf-8", errors="replace")
@@ -394,14 +451,11 @@ def _start_serial_reader_background():
                     while "\n" in buf:
                         line, buf = buf.split("\n", 1)
                         line = line.replace("\r", "").strip()
-                        
+
                         if line:
                             ts = time.strftime("%H:%M:%S")
                             print(f"[{ts}] << {line}")
-                            
-                            # Process sensor data
-                            # Proteus/Arduino đôi khi không đúng prefix (KHI=/STAT|),
-                            # nên chỉ cần chứa dữ liệu gas + nhiệt độ cũng parse được.
+
                             is_sensor_line = (
                                 line.startswith("STAT|")
                                 or "KHI=" in line
@@ -530,8 +584,12 @@ def _start_serial_bridge_background():
 # ============================================================
 # Start
 # ============================================================
+# IMPORTANT:
+# Không phụ thuộc `if __name__ == '__main__'` vì bạn đang chạy bằng VSCode config
+# (có thể không vào nhánh này) -> web sẽ "update DB/UI" nhưng không TX xuống COM.
+# Vì vậy: khởi động background threads ngay khi module được import/exec bởi Flask.
+_start_serial_reader_background()   # Đọc sensor + TX PENDING xuống Arduino (gộp chung để tránh mở COM 2 lần)
+
 if __name__ == '__main__':
-    _start_serial_reader_background()  # Đọc sensor từ Arduino
-    _start_serial_bridge_background()  # Gửi lệnh điều khiển xuống Arduino
     # Tránh Flask debug/reloader khởi chạy lại process -> tranh COM gây "Access is denied"
     app.run(debug=False, use_reloader=False, host='0.0.0.0', port=5000)

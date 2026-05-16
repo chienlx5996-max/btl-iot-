@@ -262,38 +262,57 @@ def run_reader(port: str, baud: int, save_to_db: bool):
         """
         Web (và WinForms) chỉ ghi vào DB bảng control_commands.
         Reader này sẽ:
-          - Lấy command PENDING (theo thứ tự tạo)
+          - Lấy command PENDING (tất cả source: MOBILE, WINFORM, SYSTEM...)
           - Gửi xuống COM đúng command string (FAN_ON, DOOR_OPEN, ...)
+          - Đợi response từ Arduino (KHI Arduino gửi "COMMAND|OK")
           - Cập nhật SENT / SUCCESS / FAILED
         """
         if not save_to_db or db is None:
             return
 
-        # Tránh trùng luồng gửi lệnh: Flask/webapp đã bridge PENDING theo source='MOBILE'
-        pending = db.get_pending_commands(limit=10, exclude_source="MOBILE")
+        # Xử lý TẤT CẢ pending commands (bao gồm cả MOBILE từ web)
+        pending = db.get_pending_commands(limit=1)
         if not pending:
             return
 
-        for cmd_row in pending:
-            command_id = cmd_row["id"]
-            command = cmd_row.get("command")
-            status_before = cmd_row.get("status")
+        cmd_row = pending[0]
+        command_id = cmd_row["id"]
+        command = cmd_row.get("command")
 
-            if not command:
-                db.mark_command_result(command_id, success=False, response="EMPTY_COMMAND")
-                continue
+        if not command:
+            db.mark_command_result(command_id, success=False, response="EMPTY_COMMAND")
+            return
 
-            # Arduino hiện tại KHÔNG gửi ACK kiểu LENH=/KET_QUA=...
-            # => coi như thành công nếu TX gửi được lên serial.
-            try:
-                ser.write((str(command) + "\n").encode("ascii", errors="replace"))
-                db.mark_command_sent(command_id)
-                db.mark_command_result(command_id, success=True, response="TX_OK")
-                print(f"         [TX-DB] Sent command id={command_id} cmd={command} (status was {status_before}) -> SUCCESS")
-            except Exception as txe:
-                db.mark_command_result(command_id, success=False, response=f"TX_ERROR: {txe}")
-                print(f"         [TX-LOI] command id={command_id} cmd={command} err={txe}")
-                continue
+        try:
+            ser.write((str(command) + "\n").encode("ascii", errors="replace"))
+            db.mark_command_sent(command_id)
+            print(f"         [TX] Sent command id={command_id} cmd={command}")
+            
+            # Đợi response trong 3 giây
+            start_time = time.time()
+            response_received = False
+            while time.time() - start_time < 3:
+                if ser.in_waiting > 0:
+                    raw = ser.read(ser.in_waiting)
+                    text = raw.decode("utf-8", errors="replace")
+                    for line in text.split('\n'):
+                        line = line.strip()
+                        if line and command in line and "OK" in line:
+                            db.mark_command_result(command_id, success=True, response=line)
+                            print(f"         [RX-ACK] id={command_id} response={line}")
+                            response_received = True
+                            break
+                    if response_received:
+                        break
+                time.sleep(0.05)
+            
+            if not response_received:
+                db.mark_command_result(command_id, success=False, response="NO_RESPONSE_TIMEOUT")
+                print(f"         [TIMEOUT] id={command_id} no response after 3s")
+                
+        except Exception as txe:
+            db.mark_command_result(command_id, success=False, response=f"TX_ERROR: {txe}")
+            print(f"         [TX-LOI] command id={command_id} cmd={command} err={txe}")
 
     # --- Vong lap doc ---
     try:

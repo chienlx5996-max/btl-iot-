@@ -390,6 +390,26 @@ class DBHelper:
         params.append(limit)
         return self._execute(sql, tuple(params), fetch=True)
 
+    def get_sent_commands(
+        self,
+        limit: int = 50,
+        source: str = None,
+    ) -> List[Dict]:
+        """
+        Lay danh sach lenh da gui xuong Arduino (SENT) dang doi response.
+        Dung de ket hop response tu serial.
+        """
+        sql = "SELECT * FROM `control_commands` WHERE `status` = 'SENT'"
+        params: List[Any] = []
+
+        if source:
+            sql += " AND `source` = %s"
+            params.append(source)
+
+        sql += " ORDER BY `created_at` ASC LIMIT %s"
+        params.append(limit)
+        return self._execute(sql, tuple(params), fetch=True)
+
     # ----------------------------------------------------------
     # 6. LICH SU MO CUA - DOOR ACCESS LOG
     # ----------------------------------------------------------
